@@ -1,0 +1,14 @@
+.git
+.git/hooks
+node_modules
+dist
+target
+data
+frontend/node_modules
+frontend/dist
+__pycache__
+.env
+docs
+*.md
+!README.md
+!AGENTS.md

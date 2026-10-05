@@ -1,0 +1,23 @@
+[package]
+name = "interaction-graph"
+description = "Drug-drug interaction knowledge graph engine (petgraph)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "interaction_graph"
+
+[[bin]]
+name = "interaction-graph-cli"
+path = "src/main.rs"
+
+[dependencies]
+petgraph.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+clap.workspace = true
+csv.workspace = true
+regex.workspace = true
