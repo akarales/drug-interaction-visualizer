@@ -1,0 +1,4 @@
+Drug 1,Drug 2,Interaction Description
+Warfarin,Aspirin,"Warfarin may increase the anticoagulant activities of Aspirin."
+Simvastatin,Amiodarone,"The metabolism of Simvastatin can be decreased when combined with Amiodarone."
+Fluconazole,Glyburide,"The metabolism of Glyburide can be decreased when combined with Fluconazole."

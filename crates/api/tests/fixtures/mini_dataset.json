@@ -1,0 +1,21 @@
+{
+  "drugs": [
+    {"id": "warfarin", "name": "Warfarin", "category": "activity:anticoagulant"},
+    {"id": "aspirin", "name": "Aspirin", "category": "activity:antiplatelet"},
+    {"id": "simvastatin", "name": "Simvastatin", "category": "exposure"},
+    {"id": "amiodarone", "name": "Amiodarone", "category": "exposure"},
+    {"id": "ibuprofen", "name": "Ibuprofen", "category": "adverse-effects"},
+    {"id": "fluconazole", "name": "Fluconazole", "category": "metabolism"},
+    {"id": "glyburide", "name": "Glyburide", "category": "metabolism"},
+    {"id": "alprazolam", "name": "Alprazolam", "category": "exposure"}
+  ],
+  "interactions": [
+    {"from": "warfarin", "to": "aspirin", "kind": "activity:anticoagulant", "direction": "increase", "severity": "severe", "mechanism": "Additive anticoagulant and antiplatelet effects increase bleeding risk.", "evidence": "fixture"},
+    {"from": "warfarin", "to": "ibuprofen", "kind": "adverse-effects", "direction": "increase", "severity": "moderate", "mechanism": "NSAID platelet inhibition plus gastric injury on top of anticoagulation.", "evidence": "fixture"},
+    {"from": "warfarin", "to": "fluconazole", "kind": "metabolism", "direction": "decrease", "severity": "severe", "mechanism": "CYP2C9 inhibition reduces warfarin metabolism, elevating INR.", "evidence": "fixture"},
+    {"from": "warfarin", "to": "amiodarone", "kind": "exposure", "direction": "increase", "severity": "severe", "mechanism": "Amiodarone inhibits CYP2C9/CYP3A4, raising warfarin levels.", "evidence": "fixture"},
+    {"from": "amiodarone", "to": "simvastatin", "kind": "exposure", "direction": "increase", "severity": "moderate", "mechanism": "CYP3A4 inhibition raises simvastatin levels.", "evidence": "fixture"},
+    {"from": "fluconazole", "to": "glyburide", "kind": "metabolism", "direction": "decrease", "severity": "severe", "mechanism": "CYP2C9 inhibition raises sulfonylurea levels, risking hypoglycemia.", "evidence": "fixture"},
+    {"from": "fluconazole", "to": "alprazolam", "kind": "exposure", "direction": "increase", "severity": "moderate", "mechanism": "Azole CYP3A4 inhibition increases benzodiazepine sedation.", "evidence": "fixture"}
+  ]
+}

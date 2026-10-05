@@ -1,0 +1,25 @@
+# Rust
+target/
+
+# JS/TS
+node_modules/
+dist/
+*.local
+
+# Dataset (downloaded per user at setup; never redistributed)
+data/
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Coverage / artifacts
+.coverage
+htmlcov/
