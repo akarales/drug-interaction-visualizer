@@ -37,6 +37,9 @@ pub struct Config {
     pub rxnav_url: Option<String>,
     pub aliases_path: PathBuf,
     pub port: u16,
+    /// Postgres for saved regimens + override audit; `None` = in-memory
+    /// store. Secret (may contain a password) — redacted in `Debug`.
+    pub database_url: Option<String>,
 }
 
 impl fmt::Debug for Config {
@@ -57,6 +60,10 @@ impl fmt::Debug for Config {
             .field("rxnav_url", &self.rxnav_url)
             .field("aliases_path", &self.aliases_path)
             .field("port", &self.port)
+            .field(
+                "database_url",
+                &self.database_url.as_ref().map(|_| "<redacted>"),
+            )
             .finish()
     }
 }
@@ -115,6 +122,9 @@ impl Config {
             port: env_or("APP_PORT", "8001")
                 .parse()
                 .map_err(|_| ConfigError("APP_PORT must be a valid port number".to_string()))?,
+            database_url: std::env::var("APP_DATABASE_URL")
+                .ok()
+                .filter(|u| !u.trim().is_empty()),
             dataset_path,
         })
     }

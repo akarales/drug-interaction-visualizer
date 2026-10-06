@@ -59,17 +59,44 @@ curl localhost:8001/api/v1/drugs/warfarin/neighbors
 `/drugs` returns every drug (`id`, `name`, `category`, `degree`,
 `severity_mix` = `[contraindicated, severe, moderate, mild]` counts for the
 node severity ring, `aliases`)
-plus dataset `stats` (`drugs`, `interactions`, `severity_mix`) — the web
-UI's only bulk payload.
+plus dataset `stats` (`drugs`, `interactions`, `severity_mix`) and
+`sources.direction` (citation of the FDA table below) — the web UI's only
+bulk payload.
 
 Neighbors carry the full interaction record including `mechanism` text and
 `severity_basis` (`kind:<kind>`, `default:<kind>` or `onc:<rule>`).
+
+### Direction (`roles`, FDA)
+
+A neighbour has `roles` only when the FDA CYP/transporter table
+establishes which drug acts on which; **absent = direction unknown** (it is
+never inferred from the dataset sentence, whose wording reverses inhibitor
+roles in most rows):
+
+```json
+"roles": {
+  "pattern": "directed",              // or "bidirectional"
+  "links": [{
+    "precipitant": "fluconazole", "object": "warfarin",
+    "pathway": "CYP2C9", "effect": "inhibits",
+    "strength": "moderate",            // strong | moderate | weak | unspecified (transporters)
+    "object_sensitivity": "moderate-sensitive"  // sensitive | moderate-sensitive | unspecified
+  }]
+}
+```
+
+Rule: A → B when FDA lists A as an inhibitor/inducer of pathway P and B as a
+substrate of P (both ways = `bidirectional`). Pharmacokinetic roles,
+independent of the dataset's interaction type. Source: FDA, *Examples of
+Drugs that Interact with CYP Enzymes and Transporter Systems*, Table 1
+(content 2026-05-29), extracted to `crates/engine/data/fda_roles.csv`.
+Coverage: 188 dataset drugs; 2,617 of 191,135 pairs get a direction.
 
 ### Severity tiers (editorial)
 
 `contraindicated` > `severe` > `moderate` > `mild`. Assigned in the dataset
 build from a reviewed kind table plus the ONC high-priority DDI list
-(Phansalkar et al., JAMIA 2012) — see `crates/engine/src/severity.rs`. Not
+(Phansalkar et al., JAMIA 2012) — see `crates/engine/src/severity/`. Not
 clinical grading.
 
 ## Drug name resolution (hybrid search)
@@ -158,13 +185,71 @@ The context builder explains direct interactions, indirect chains, and
 no-interaction cases differently; the LLM (or stub) receives only that
 context.
 
+## Streamed explanation
+
+`POST /api/v1/explain/stream` — same request body as `/explain`; answers
+`application/x-ndjson` (never gzipped), one JSON event per line:
+
+```text
+{"type":"start", drug_a, drug_b, direct_interaction, chain_length, dataset_severity, severity_basis, provider, model, audience, stub, disclaimer}
+{"type":"delta","field":"clinician.explanation","text":"Fluconazole inhibits"}   … repeated
+{"type":"done", …exactly the /explain body…}        # validated against the schema
+{"type":"error","code":"llm_upstream","error":"…"}  # instead of done
+```
+
+- Validation errors (unknown drug, bad model) are normal JSON errors
+  *before* streaming starts.
+- One model call writes both sections; the server extracts string fields
+  from the partial JSON as it arrives (`clinician.*`, `patient.*`).
+- `done` re-asserts the dataset severity into every section (the model can
+  never change it) — the same holds for `/explain`.
+- Closing the connection (the UI's Stop) cancels the upstream model request;
+  at most 2 model calls run at once (streams hold their slot until done).
+
+## Saved regimens and override audit
+
+```bash
+curl localhost:8001/api/v1/regimens                                   # {store, regimens[]}
+curl -X POST localhost:8001/api/v1/regimens -H 'content-type: application/json' \
+  -d '{"label":"Statin switch review","drug_ids":["clarithromycin","simvastatin"],
+       "overrides":[{"drug_a":"clarithromycin","drug_b":"simvastatin","reason":"Short course"}]}'
+curl localhost:8001/api/v1/regimens/<id>        # {regimen, audit[], active_overrides[], current_dataset}
+curl -X PUT  localhost:8001/api/v1/regimens/<id> -d '{"label":"…","drug_ids":[…]}' -H 'content-type: application/json'
+curl -X DELETE localhost:8001/api/v1/regimens/<id>                    # 204, soft delete (audit kept)
+curl -X POST localhost:8001/api/v1/overrides -H 'content-type: application/json' \
+  -d '{"regimen_id":null,"drug_a":"clarithromycin","drug_b":"simvastatin","action":"override","reason":"Specialist advice"}'
+curl 'localhost:8001/api/v1/overrides?regimen_id=<id>'               # {events[]}, oldest first
+```
+
+- `label` 1–80 chars, `reason` 3–500, 1–20 known `drug_ids` (order kept,
+  duplicates dropped). Text that looks like an identifier (email, date,
+  phone, long digit runs, MRN/DOB/SSN keywords) → `400` — synthetic data only.
+- Overrides: only for contraindicated pairs (`revoke` for any interacting
+  pair); the event stores the dataset `severity` + `severity_basis` at
+  decision time, `actor` = `demo-clinician`, pair key ordered `drug_a < drug_b`.
+  Events are append-only. Unknown regimen → `404 not_found`.
+- `dataset_version` (`ddi:<drugs>:<interactions>`) marks which dataset build
+  a save refers to; `current_dataset` tells the UI if it still matches.
+
 ## Errors
 
-| Status | Meaning |
-|--------|---------|
-| `400` | bad query params (hops out of range, empty prompt) |
-| `404` | unknown drug id — `{"error": "unknown drug id: …"}` |
-| `502` | model upstream error (stub=false and Ollama unreachable or slower than the 60 s timeout) |
+Every error body is `{"error": "<message>", "code": "<code>"}` — branch on
+`code`, show `error`.
+
+| Status | `code` | Meaning |
+|--------|--------|---------|
+| `400` | `bad_request` | bad query params (hops out of range, empty query, unavailable model) |
+| `404` | `not_found` | no such (live) saved regimen |
+| `404` | `unknown_drug` | unknown drug id — `{"error": "unknown drug id: warfarinn", "code": "unknown_drug"}` |
+| `500` | `internal` | engine/dataset fault (details are logged, not returned) |
+| `502` | `llm_upstream` | model upstream error (provider unreachable, schema mismatch, or slower than the 60 s timeout) |
+
+Every response carries an `x-request-id` header (a well-formed incoming
+`x-request-id` is echoed, otherwise one is generated); the same id is on
+the request's log span, so a reported error can be found in the logs.
+
+`/graph`, `/graph/ego` and `/interactions/chain` are **legacy** (v1 UI):
+documented, capped and tested, but not used by the current frontend.
 
 `/explain` allows at most 2 concurrent LLM calls; extra requests queue.
 

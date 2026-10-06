@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 
-import { pickedIds, useExplorer } from '@/state/explorer';
+import { pickedIds } from './selectors';
+import { useExplorer } from './store';
 
 /**
  * Regimen ⇄ URL (`?meds=warfarin,acetylsalicylic-acid`). Every regimen

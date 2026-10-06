@@ -34,6 +34,7 @@ fn state_with(customize: impl FnOnce(&mut drug_interaction_api::config::Config))
         rxnav_url: None,
         aliases_path: PathBuf::from("does-not-exist.json"),
         port: 0,
+        database_url: None,
     };
     customize(&mut config);
     let dataset = std::fs::read_to_string(fixture_path()).expect("fixture exists");
@@ -167,7 +168,35 @@ async fn neighbors_include_mechanism() {
 async fn neighbors_unknown_drug_404() {
     let (status, body) = get("/api/v1/drugs/not-a-drug/neighbors").await;
     assert_eq!(status, StatusCode::NOT_FOUND);
-    assert!(body["error"].as_str().unwrap().contains("not-a-drug"));
+    assert_eq!(body["error"], "unknown drug id: not-a-drug");
+    assert_eq!(body["code"], "unknown_drug");
+}
+
+#[tokio::test]
+async fn bad_request_carries_a_stable_code() {
+    let (status, body) = get("/api/v1/graph/ego?drug=warfarin&hops=9").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["code"], "bad_request");
+}
+
+#[tokio::test]
+async fn every_response_has_a_request_id() {
+    let send = |id: Option<&str>| {
+        let mut req = Request::get("/health");
+        if let Some(id) = id {
+            req = req.header("x-request-id", id);
+        }
+        routes::router(test_state()).oneshot(req.body(Body::empty()).expect("request builds"))
+    };
+    let generated = send(None).await.expect("request succeeds");
+    let id = generated.headers()["x-request-id"].to_str().expect("ascii");
+    assert!(!id.is_empty());
+    let echoed = send(Some("trace-abc_1")).await.expect("request succeeds");
+    assert_eq!(echoed.headers()["x-request-id"], "trace-abc_1");
+    let replaced = send(Some("bad id with spaces"))
+        .await
+        .expect("request succeeds");
+    assert_ne!(replaced.headers()["x-request-id"], "bad id with spaces");
 }
 
 #[tokio::test]
@@ -370,4 +399,155 @@ async fn uncompressed_when_not_requested() {
         .await
         .expect("in-process request succeeds");
     assert!(response.headers().get("content-encoding").is_none());
+}
+
+#[tokio::test]
+async fn neighbors_carry_fda_direction_only_when_established() {
+    let (status, body) = get("/api/v1/drugs/warfarin/neighbors").await;
+    assert_eq!(status, StatusCode::OK);
+    let neighbors = body["neighbors"].as_array().expect("neighbors");
+    let by_id = |id: &str| {
+        neighbors
+            .iter()
+            .find(|n| n["id"] == id)
+            .expect("neighbor present")
+    };
+
+    let fluconazole = &by_id("fluconazole")["roles"];
+    assert_eq!(fluconazole["pattern"], "directed");
+    let link = &fluconazole["links"][0];
+    assert_eq!(link["precipitant"], "fluconazole");
+    assert_eq!(link["object"], "warfarin");
+    assert_eq!(link["pathway"], "CYP2C9");
+    assert_eq!(link["effect"], "inhibits");
+
+    // no FDA roles for the pair → no direction field at all (unknown, never guessed)
+    assert!(by_id("aspirin").get("roles").is_none());
+}
+
+#[tokio::test]
+async fn drugs_list_cites_the_direction_source() {
+    let (_, body) = get("/api/v1/drugs").await;
+    assert!(
+        body["sources"]["direction"]["url"]
+            .as_str()
+            .expect("url")
+            .starts_with("https://www.fda.gov/")
+    );
+    assert_eq!(body["sources"]["direction"]["content_date"], "2026-05-29");
+}
+
+async fn post_stream(state: AppState, payload: Value, gzip: bool) -> axum::response::Response {
+    let mut req =
+        Request::post("/api/v1/explain/stream").header("content-type", "application/json");
+    if gzip {
+        req = req.header("accept-encoding", "gzip");
+    }
+    routes::router(state)
+        .oneshot(
+            req.body(Body::from(payload.to_string()))
+                .expect("request builds"),
+        )
+        .await
+        .expect("in-process request succeeds")
+}
+
+#[tokio::test]
+async fn explain_stream_sends_start_deltas_then_validated_done() {
+    // warfarin + aspirin is SEVERE in the dataset; the stub model says "moderate"
+    let response = post_stream(
+        test_state(),
+        serde_json::json!({"drug_a": "warfarin", "drug_b": "aspirin"}),
+        true,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()["content-type"], "application/x-ndjson");
+    assert!(
+        response.headers().get("content-encoding").is_none(),
+        "never gzipped: gzip buffers deltas"
+    );
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body reads");
+    let events: Vec<Value> = std::str::from_utf8(&bytes)
+        .expect("utf-8")
+        .lines()
+        .map(|l| serde_json::from_str(l).expect("each line is JSON"))
+        .collect();
+
+    let first = &events[0];
+    assert_eq!(first["type"], "start");
+    assert!(
+        first["disclaimer"]
+            .as_str()
+            .expect("disclaimer")
+            .contains("Not medical advice")
+    );
+    assert_eq!(first["dataset_severity"], "severe");
+
+    let streamed: String = events
+        .iter()
+        .filter(|e| e["type"] == "delta" && e["field"] == "clinician.explanation")
+        .map(|e| e["text"].as_str().expect("text"))
+        .collect();
+    assert!(
+        events.iter().filter(|e| e["type"] == "delta").count() > 3,
+        "arrives progressively"
+    );
+
+    let done = events.last().expect("events");
+    assert_eq!(done["type"], "done");
+    assert_eq!(
+        done["sections"]["clinician"]["explanation"],
+        streamed.as_str()
+    );
+    // dataset severity wins over the model in the final payload
+    assert_eq!(done["sections"]["clinician"]["severity"], "severe");
+    assert_eq!(done["sections"]["patient"]["severity"], "severe");
+}
+
+#[tokio::test]
+async fn explain_stream_validates_before_streaming() {
+    let response = post_stream(
+        test_state(),
+        serde_json::json!({"drug_a": "warfarin", "drug_b": "nope"}),
+        false,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(response.headers()["content-type"], "application/json");
+}
+
+#[tokio::test]
+async fn cancelled_stream_releases_its_model_slot() {
+    let state = test_state();
+    let permits = state.explain_permits.clone();
+    let total = permits.available_permits();
+    let response = post_stream(
+        state,
+        serde_json::json!({"drug_a": "warfarin", "drug_b": "fluconazole"}),
+        false,
+    )
+    .await;
+    let mut body = response.into_body().into_data_stream();
+    use futures_util::StreamExt;
+    let first = body.next().await.expect("first chunk").expect("ok");
+    assert!(
+        std::str::from_utf8(&first)
+            .expect("utf-8")
+            .contains("\"start\"")
+    );
+    assert!(
+        permits.available_permits() < total,
+        "the stream holds a slot while running"
+    );
+    drop(body); // the browser pressed Stop
+    for _ in 0..100 {
+        if permits.available_permits() == total {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    panic!("the model slot was not released after the client disconnected");
 }

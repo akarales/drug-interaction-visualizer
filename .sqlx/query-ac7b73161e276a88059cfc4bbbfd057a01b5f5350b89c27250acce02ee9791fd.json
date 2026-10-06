@@ -1,0 +1,143 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "insert into override_events\n                   (regimen_id, drug_a, drug_b, action, reason, actor, severity, severity_basis)\n                 values ($1, $2, $3, $4, $5, $6, $7, $8)\n                 returning id, regimen_id, drug_a, drug_b, action, reason, actor, severity, severity_basis, created_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "override_events",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "regimen_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "override_events",
+            "name": "regimen_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "drug_a",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "override_events",
+            "name": "drug_a"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "drug_b",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "override_events",
+            "name": "drug_b"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "action",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "override_events",
+            "name": "action"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "reason",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "override_events",
+            "name": "reason"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "actor",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "override_events",
+            "name": "actor"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "severity",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "override_events",
+            "name": "severity"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "severity_basis",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "override_events",
+            "name": "severity_basis"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "override_events",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "ac7b73161e276a88059cfc4bbbfd057a01b5f5350b89c27250acce02ee9791fd"
+}

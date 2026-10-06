@@ -1,4 +1,24 @@
 services:
+  # Optional persistence (saved regimens + override audit). Local demo
+  # credentials only; bound to localhost. Without it the API uses an
+  # in-memory store.
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: ddi_visualizer
+    ports:
+      - "127.0.0.1:5434:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d ddi_visualizer"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
   api:
     build:
       context: .
@@ -8,8 +28,15 @@ services:
     environment:
       APP_LLM_STUB: "true"
       APP_DATASET_PATH: /app/data/ddi_dataset.json
+      APP_DATABASE_URL: postgresql://app:app@db:5432/ddi_visualizer
     volumes:
-      - ./data:/app/data
+      - ./data:/app/data:ro
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      db:
+        condition: service_healthy
     restart: unless-stopped
 
   web:
@@ -17,7 +44,10 @@ services:
       context: .
       dockerfile: frontend/Dockerfile
     ports:
-      - "3001:80"
+      - "3001:8080"
     depends_on:
       - api
     restart: unless-stopped
+
+volumes:
+  pgdata:

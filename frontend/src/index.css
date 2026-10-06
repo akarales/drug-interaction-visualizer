@@ -146,7 +146,8 @@ body,
   --foreground: oklch(0.8787 0.0426 272.2767);
   --card: oklch(0.2429 0.0304 283.9110);
   --card-foreground: oklch(0.8787 0.0426 272.2767);
-  --popover: oklch(0.4037 0.0320 280.1520);
+  /* surface0: muted text keeps ≥ 4.5:1 on dialogs, palette, sheets */
+  --popover: oklch(0.3244 0.0319 281.9800);
   --popover-foreground: oklch(0.8787 0.0426 272.2767);
   --primary: oklch(0.7871 0.1187 304.7693);
   --primary-foreground: oklch(0.2429 0.0304 283.9110);
@@ -207,7 +208,88 @@ body,
   html {
     @apply font-sans;
   }
+  /* thin themed scrollbars everywhere (native bright ones clash with the dark map) */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklch, var(--muted-foreground) 35%, transparent) transparent;
+  }
 }
+
+/* Layering: graph < panels < map overlays < floating card < dialogs (z-50, radix) */
+:root {
+  --z-graph: 0;
+  --z-panel: 10;
+  --z-overlay: 20;
+  --z-float: 30;
+}
+
+/* Glass surface for panels over the full-bleed map; solid when the browser
+   can't blur or the user asks for less transparency. */
+.glass {
+  background: color-mix(in oklch, var(--card) 72%, transparent);
+  backdrop-filter: blur(14px) saturate(1.4);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  border-color: color-mix(in oklch, var(--foreground) 10%, transparent);
+  box-shadow: inset 0 1px 0 0 color-mix(in oklch, white 6%, transparent);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass { background: var(--card); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .glass { background: var(--card); backdrop-filter: none; -webkit-backdrop-filter: none; }
+}
+
+/* Active medication card: a bright segment travelling at constant speed
+   around a dim 1 px outline (SVG dash, pathLength = 100). */
+.trace {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+  animation: trace-in 150ms ease-out;
+}
+.trace rect {
+  x: 0.5px;
+  y: 0.5px;
+  width: calc(100% - 1px);
+  height: calc(100% - 1px);
+  rx: var(--radius-xl);
+  fill: none;
+}
+.trace__base {
+  stroke: color-mix(in oklch, var(--primary) 30%, transparent);
+  stroke-width: 1;
+}
+.trace__glow,
+.trace__head {
+  stroke: var(--primary);
+  stroke-linecap: round;
+  animation: trace-run 5s linear infinite;
+}
+.trace__glow {
+  stroke-width: 3;
+  stroke-dasharray: 16 84;
+  opacity: 0.35;
+  filter: blur(2px);
+}
+.trace__head {
+  stroke-width: 1.5;
+  stroke-dasharray: 12 88;
+}
+@keyframes trace-run {
+  to { stroke-dashoffset: -100; }
+}
+@keyframes trace-in {
+  from { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .trace, .trace__glow, .trace__head { animation: none; }
+  .trace__glow { display: none; }
+  .trace__head { stroke-dasharray: none; stroke-width: 1; }
+}
+
 /* Printable regimen report: print only #print-report (portals included) */
 @media print {
   @page {

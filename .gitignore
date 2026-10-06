@@ -7,7 +7,7 @@ dist/
 *.local
 
 # Dataset (downloaded per user at setup; never redistributed)
-data/
+/data/
 
 # Env & secrets
 .env

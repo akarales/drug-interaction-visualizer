@@ -7,4 +7,5 @@
 pub mod dataset;
 pub mod graph;
 pub mod queries;
+pub mod roles;
 pub mod severity;

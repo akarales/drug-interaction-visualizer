@@ -3,6 +3,7 @@
 use drug_interaction_api::config::Config;
 use drug_interaction_api::routes;
 use drug_interaction_api::state::AppState;
+use drug_interaction_api::store::Store;
 use tower_http::trace::TraceLayer;
 
 #[tokio::main]
@@ -29,7 +30,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let dataset = std::fs::read_to_string(&config.dataset_path)?;
     let engine = interaction_graph::graph::InteractionGraph::from_json(&dataset)?;
 
-    let state = AppState::new(config.clone(), engine);
+    let store = match config.database_url.as_deref() {
+        Some(url) => Store::postgres(url).await?,
+        None => Store::memory(),
+    };
+    tracing::info!(store = store.kind(), "persistence ready");
+    let state = AppState::with_store(config.clone(), engine, store);
     let app = routes::router(state).layer(TraceLayer::new_for_http());
 
     let addr = format!("0.0.0.0:{}", config.port);

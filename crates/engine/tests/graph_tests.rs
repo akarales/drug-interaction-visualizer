@@ -259,3 +259,10 @@ fn onc_high_priority_pairs_are_contraindicated() {
         "non-ONC pairs keep their kind grade"
     );
 }
+
+#[test]
+fn display_name_falls_back_to_the_id() {
+    let engine = InteractionGraph::from_dataset(&fixture()).expect("valid dataset");
+    assert_eq!(engine.display_name("a"), "Drug A");
+    assert_eq!(engine.display_name("zz"), "zz");
+}

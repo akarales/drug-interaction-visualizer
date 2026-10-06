@@ -2,19 +2,20 @@
 //! (all in-memory, synchronous), delegate to the LLM layer (stub by
 //! default), always attach the disclaimer.
 
-use std::collections::HashMap;
-
 use axum::Json;
 use axum::extract::State;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+use interaction_graph::roles::{self, Effect};
+
+use super::chain::{default_max_hops, validate_max_hops};
 use crate::config::LlmProvider;
 use crate::error::ApiError;
-use crate::llm::{self, Audience};
+use crate::llm::{self, Audience, Explanation};
 use crate::state::AppState;
 
-const DISCLAIMER: &str = "Demo output from DrugBank-derived public data. \
+pub(super) const DISCLAIMER: &str = "Demo output from DrugBank-derived public data. \
 Not medical advice. Always consult a physician or pharmacist.";
 
 #[derive(Debug, Deserialize)]
@@ -35,67 +36,77 @@ pub struct ExplainRequest {
     pub audience: Audience,
 }
 
-fn default_max_hops() -> usize {
-    3
-}
-
-fn drug_names(state: &AppState) -> HashMap<String, String> {
-    state
-        .engine
-        .drugs()
-        .into_iter()
-        .map(|(drug, _)| (drug.id, drug.name))
-        .collect()
-}
-
 /// Prompt context plus the dataset facts the UI shows next to model text.
-struct Context {
-    direct: bool,
-    chain_length: usize,
+pub(super) struct Context {
+    pub direct: bool,
+    pub chain_length: usize,
     /// Dataset severity of the direct interaction — authoritative over the model.
-    severity: Option<String>,
-    severity_basis: Option<String>,
-    prompt: String,
+    pub severity: Option<String>,
+    pub severity_basis: Option<String>,
+    pub prompt: String,
 }
 
-fn build_context(state: &AppState, request: &ExplainRequest) -> Result<Context, ApiError> {
-    // Unknown drugs -> 404 before any LLM work.
-    state
-        .engine
-        .degree(&request.drug_a)
-        .map_err(|e| ApiError::UnknownDrug(e.to_string()))?;
-    state
-        .engine
-        .degree(&request.drug_b)
-        .map_err(|e| ApiError::UnknownDrug(e.to_string()))?;
+/// FDA precipitant → object facts for the prompt (or an explicit "not established").
+fn direction_context(state: &AppState, a: &str, b: &str) -> String {
+    let Some(direction) = roles::fda().direction(a, b) else {
+        return "Pharmacokinetic direction: not established by the FDA CYP/transporter table; \
+do not state which drug affects which."
+            .to_string();
+    };
+    let facts: Vec<String> = direction
+        .links()
+        .iter()
+        .map(|l| {
+            let verb = match l.effect {
+                Effect::Inhibits => "inhibits",
+                Effect::Induces => "induces",
+            };
+            format!(
+                "{} ({} {}) {verb} {}; {} is a {} {} substrate",
+                state.engine.display_name(&l.precipitant),
+                l.strength,
+                l.pathway,
+                l.pathway,
+                state.engine.display_name(&l.object),
+                l.object_sensitivity,
+                l.pathway,
+            )
+        })
+        .collect();
+    format!(
+        "Pharmacokinetic direction (FDA CYP/transporter table, authoritative over the record's \
+wording): {}.",
+        facts.join("; ")
+    )
+}
 
-    let names = drug_names(state);
+pub(super) fn build_context(
+    state: &AppState,
+    request: &ExplainRequest,
+) -> Result<Context, ApiError> {
+    // Unknown drugs -> 404 before any LLM work.
+    state.engine.degree(&request.drug_a)?;
+    state.engine.degree(&request.drug_b)?;
+    let name_a = state.engine.display_name(&request.drug_a);
+    let name_b = state.engine.display_name(&request.drug_b);
 
     let direct = state
         .engine
-        .neighbors(&request.drug_a)
-        .map_err(|e| ApiError::UnknownDrug(e.to_string()))?
+        .neighbors(&request.drug_a)?
         .into_iter()
         .find(|n| n.drug.id == request.drug_b);
 
     if let Some(neighbor) = direct {
         let interaction = neighbor.interaction;
         let prompt = format!(
-            "Drug A: {}\nDrug B: {}\nKnown direct interaction: {}, direction {}, \
-severity {}.\nMechanism: {}\nEvidence: {}\nTask: explain this interaction.",
-            names
-                .get(&request.drug_a)
-                .map(String::as_str)
-                .unwrap_or(&request.drug_a),
-            names
-                .get(&request.drug_b)
-                .map(String::as_str)
-                .unwrap_or(&request.drug_b),
+            "Drug A: {name_a}\nDrug B: {name_b}\nKnown direct interaction: {}, direction {}, \
+severity {}.\nMechanism: {}\nEvidence: {}\n{}\nTask: explain this interaction.",
             interaction.kind,
             interaction.direction,
             interaction.severity,
             interaction.mechanism,
             interaction.evidence,
+            direction_context(state, &request.drug_a, &request.drug_b),
         );
         return Ok(Context {
             direct: true,
@@ -106,38 +117,19 @@ severity {}.\nMechanism: {}\nEvidence: {}\nTask: explain this interaction.",
         });
     }
 
-    let chain = state
-        .engine
-        .interaction_chain(&request.drug_a, &request.drug_b, request.max_hops)
-        .map_err(|e| ApiError::UnknownDrug(e.to_string()))?;
+    let chain =
+        state
+            .engine
+            .interaction_chain(&request.drug_a, &request.drug_b, request.max_hops)?;
 
     if let Some(steps) = &chain.filter(|steps| !steps.is_empty()) {
-        let mut walked = vec![
-            names
-                .get(&request.drug_a)
-                .cloned()
-                .unwrap_or_else(|| request.drug_a.clone()),
-        ];
-        for step in steps {
-            walked.push(
-                names
-                    .get(&step.to)
-                    .cloned()
-                    .unwrap_or_else(|| step.to.clone()),
-            );
-        }
+        let walked: Vec<&str> = std::iter::once(name_a)
+            .chain(steps.iter().map(|step| state.engine.display_name(&step.to)))
+            .collect();
         let prompt = format!(
-            "Drug A: {}\nDrug B: {}\nThere is no direct interaction, but there \
+            "Drug A: {name_a}\nDrug B: {name_b}\nThere is no direct interaction, but there \
 is an indirect chain of {} interaction(s): {}.\nTask: explain how these drugs \
 could affect each other indirectly through this chain and how relevant that is.",
-            names
-                .get(&request.drug_a)
-                .map(String::as_str)
-                .unwrap_or(&request.drug_a),
-            names
-                .get(&request.drug_b)
-                .map(String::as_str)
-                .unwrap_or(&request.drug_b),
             steps.len(),
             walked.join(" -> "),
         );
@@ -151,18 +143,10 @@ could affect each other indirectly through this chain and how relevant that is."
     }
 
     let prompt = format!(
-        "Drug A: {}\nDrug B: {}\nNo interaction between these drugs was found in \
+        "Drug A: {name_a}\nDrug B: {name_b}\nNo interaction between these drugs was found in \
 this dataset.\nTask: state only that no interaction was found in this dataset \
 and that absence from one pairwise dataset does not establish safety (dose, \
 patient factors and multi-drug effects are not covered).",
-        names
-            .get(&request.drug_a)
-            .map(String::as_str)
-            .unwrap_or(&request.drug_a),
-        names
-            .get(&request.drug_b)
-            .map(String::as_str)
-            .unwrap_or(&request.drug_b),
     );
     Ok(Context {
         direct: false,
@@ -173,17 +157,12 @@ patient factors and multi-drug effects are not covered).",
     })
 }
 
-pub async fn explain(
-    State(state): State<AppState>,
-    Json(request): Json<ExplainRequest>,
-) -> Result<Json<Value>, ApiError> {
-    if request.max_hops == 0 || request.max_hops > 5 {
-        return Err(ApiError::BadRequest(
-            "max_hops must be between 1 and 5".into(),
-        ));
-    }
-    let context = build_context(&state, &request)?;
-
+/// Provider + model for a request (server defaults when absent), validated
+/// against what is actually available.
+pub(super) async fn resolve_target(
+    state: &AppState,
+    request: &ExplainRequest,
+) -> Result<(LlmProvider, String), ApiError> {
     let (default_provider, default_model) = state.config.default_target();
     let provider = request.provider.unwrap_or(default_provider);
     let model = match (&request.model, provider) {
@@ -194,7 +173,49 @@ pub async fn explain(
         (None, LlmProvider::Anthropic) => state.config.anthropic_model.clone(),
     };
     llm::validate_choice(&state.http, &state.config, provider, &model).await?;
+    Ok((provider, model))
+}
 
+/// Dataset facts + model identity: shared by the JSON response, the
+/// stream's first line (`start`) and its last line (`done`).
+pub(super) fn response_meta(
+    request: &ExplainRequest,
+    context: &Context,
+    provider: LlmProvider,
+    model: &str,
+) -> Value {
+    json!({
+        "drug_a": request.drug_a,
+        "drug_b": request.drug_b,
+        "direct_interaction": context.direct,
+        "chain_length": context.chain_length,
+        "dataset_severity": context.severity,
+        "severity_basis": context.severity_basis,
+        "provider": provider,
+        "model": model,
+        "audience": request.audience,
+        "stub": provider == LlmProvider::Stub,
+        "disclaimer": DISCLAIMER,
+    })
+}
+
+/// Final body: meta + validated sections, dataset severity asserted.
+pub(super) fn response_body(meta: Value, context: &Context, mut sections: Explanation) -> Value {
+    sections.assert_dataset_severity(context.severity.as_deref());
+    let mut body = meta;
+    // `payload` kept for API consumers that read a single section
+    body["payload"] = json!(sections.clinician.as_ref().or(sections.patient.as_ref()));
+    body["sections"] = json!(sections);
+    body
+}
+
+pub async fn explain(
+    State(state): State<AppState>,
+    Json(request): Json<ExplainRequest>,
+) -> Result<Json<Value>, ApiError> {
+    validate_max_hops(request.max_hops)?;
+    let context = build_context(&state, &request)?;
+    let (provider, model) = resolve_target(&state, &request).await?;
     let sections = llm::explain(
         &state.http,
         &state.config,
@@ -204,29 +225,6 @@ pub async fn explain(
         &context.prompt,
     )
     .await?;
-    Ok(Json(json!({
-        "drug_a": request.drug_a,
-        "drug_b": request.drug_b,
-        "direct_interaction": context.direct,
-        "chain_length": context.chain_length,
-        "dataset_severity": context.severity,
-        "severity_basis": context.severity_basis,
-        // `payload` kept for API consumers that read a single section
-        "payload": sections.clinician.as_ref().or(sections.patient.as_ref()),
-        "sections": sections,
-        "provider": provider,
-        "model": model,
-        "audience": request.audience,
-        "stub": provider == LlmProvider::Stub,
-        "disclaimer": DISCLAIMER,
-    })))
-}
-
-/// Model chooser data: providers, models, availability (Ollama read-only).
-pub async fn list_models(State(state): State<AppState>) -> Json<Value> {
-    let (provider, model) = state.config.default_target();
-    Json(json!({
-        "default": { "provider": provider, "model": model },
-        "providers": llm::list_models(&state.http, &state.config).await,
-    }))
+    let meta = response_meta(&request, &context, provider, &model);
+    Ok(Json(response_body(meta, &context, sections)))
 }

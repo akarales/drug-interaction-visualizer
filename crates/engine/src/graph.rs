@@ -106,6 +106,13 @@ impl InteractionGraph {
         &self.graph[idx]
     }
 
+    /// Display name for a drug id; the id itself when unknown (O(1), no allocation).
+    pub fn display_name<'a>(&'a self, drug_id: &'a str) -> &'a str {
+        self.index_by_id
+            .get(drug_id)
+            .map_or(drug_id, |&idx| self.graph[idx].name.as_str())
+    }
+
     pub fn indices(&self) -> impl Iterator<Item = NodeIndex> + '_ {
         self.graph.node_indices()
     }
