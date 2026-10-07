@@ -90,6 +90,11 @@ cargo run -p interaction-graph -- neighbors data/ddi_dataset.json warfarin
   `cargo sqlx prepare --workspace`
 - **Port 5433** on the dev machine belongs to another project; this app's
   Postgres is on 5434
+- **Docker base images**: builder and runtime must be the same Debian
+  release. `rust:1.96-slim` moved to trixie (glibc 2.41); a
+  `debian:bookworm-slim` runtime (glibc 2.36) fails with `GLIBC_2.38 not
+  found`. Both stages are pinned to trixie, and the CI `docker` job starts
+  both images (a build alone doesn't catch this).
 - **Recording the GIF**: Playwright's VP8 video is lossy — denoise and
   drop near-duplicate frames before palette generation or the GIF triples
 

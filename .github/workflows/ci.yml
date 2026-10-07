@@ -130,3 +130,32 @@ jobs:
         with:
           name: playwright-traces
           path: frontend/test-results/
+
+  docker:
+    # the shipped images must START, not just build: run both hardened
+    # (read-only root, no-new-privileges) on one network with the committed
+    # fixture, then check users, the nginx proxy, CSP and the NDJSON stream
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: |
+          docker build -q -t ddi-api -f Dockerfile .
+          docker build -q -t ddi-web -f frontend/Dockerfile .
+      - run: |
+          docker network create ddi
+          docker run -d --name api --network ddi --read-only --security-opt no-new-privileges:true \
+            -e APP_DATASET_PATH=/app/fixture/mini_dataset.json -e APP_RXNAV_ENABLED=false \
+            -e APP_ALIASES_PATH=/nonexistent.json \
+            -v "$PWD/crates/api/tests/fixtures:/app/fixture:ro" ddi-api
+          docker run -d --name web --network ddi --read-only --tmpfs /tmp --security-opt no-new-privileges:true \
+            -p 127.0.0.1:8087:8080 ddi-web
+          for i in $(seq 1 30); do curl -sf localhost:8087/api/v1/drugs >/dev/null && break; sleep 1; done
+          test "$(docker exec api id -u)" = 10001
+          test "$(docker exec web id -u)" = 101
+          curl -sfI localhost:8087/ | grep -qi "content-security-policy: default-src 'self'"
+          curl -sf localhost:8087/api/v1/drugs | grep -q '"id":"warfarin"'
+          curl -sfN -X POST localhost:8087/api/v1/explain/stream -H 'content-type: application/json' \
+            -d '{"drug_a":"warfarin","drug_b":"aspirin","provider":"stub","model":"stub"}' \
+            | tail -n 1 | grep -q '"type":"done"'
+      - if: failure()
+        run: docker logs api; docker logs web
