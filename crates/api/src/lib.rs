@@ -1,4 +1,4 @@
-//! Drug Interaction Visualizer API — axum service over the graph engine.
+//! Regimap (Drug Interaction Visualizer) API — axum service over the graph engine.
 //! Library crate so integration tests exercise the real router assembly.
 
 pub mod config;

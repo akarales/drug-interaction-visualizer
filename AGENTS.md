@@ -1,6 +1,8 @@
 # AGENTS.md
 
-Build, test, and verification commands for the Drug Interaction Visualizer.
+Build, test, and verification commands for **Regimap** (Drug Interaction Visualizer).
+The product name is Regimap; the repository, crates and packages keep the
+`drug-interaction-visualizer` names (renaming them would break links and history).
 
 ## Tooling
 

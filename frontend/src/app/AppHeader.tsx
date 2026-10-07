@@ -40,7 +40,10 @@ export function AppHeader({ onDrawer }: { onDrawer?: (d: Drawer) => void }) {
         ))}
       </div>
       <Stethoscope className="size-4 shrink-0 text-primary" aria-hidden />
-      <h1 className="truncate text-sm font-semibold">Drug Interaction Visualizer</h1>
+      <h1 className="flex min-w-0 items-baseline gap-2 truncate text-sm font-semibold">
+        Regimap
+        <span className="hidden truncate text-xs font-normal text-muted-foreground lg:inline">Drug Interaction Visualizer</span>
+      </h1>
       {stats && (
         <Badge variant="secondary" className="hidden font-mono text-[10px] md:inline-flex">
           {stats.drugs.toLocaleString()} drugs · {stats.interactions.toLocaleString()}{' '}

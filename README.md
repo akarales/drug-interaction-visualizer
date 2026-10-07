@@ -1,6 +1,7 @@
 <p align="center">
-  <h1>💊 Drug Interaction Visualizer</h1>
-  <p><b>Clinician-facing DDI workspace — petgraph engine, WebGL map, regimen check, FDA interaction direction, streamed grounded AI</b></p>
+  <h1>💊 Regimap</h1>
+  <p><b>Drug Interaction Visualizer — see how every medication in a regimen affects the others</b></p>
+  <p>Clinician-facing DDI workspace: WebGL map, regimen check, FDA-sourced interaction direction, append-only override audit, streamed grounded AI</p>
   <p>
     <a href="https://github.com/akarales/drug-interaction-visualizer/actions/workflows/ci.yml"><img src="https://github.com/akarales/drug-interaction-visualizer/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
     <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT">
@@ -11,10 +12,10 @@
 </p>
 
 <p align="center">
-  <img src="docs/demo.gif" width="800" alt="Demo: adding fluconazole to warfarin shows the regimen check and the FDA direction (fluconazole, a CYP2C9 inhibitor, acts on warfarin); adding simvastatin and clarithromycin raises the contraindication alert, which is overridden with a documented reason; the clinician and patient explanation then streams in from a local model">
+  <img src="docs/demo.gif" width="780" alt="Demo: adding fluconazole to warfarin shows the regimen check and the FDA direction (fluconazole, a CYP2C9 inhibitor, acts on warfarin); adding simvastatin and clarithromycin raises the contraindication alert, which is overridden with a documented reason; the clinician and patient explanation then streams in from a local model">
 </p>
 
-A drug–drug interaction workspace for clinicians, built on **real data**: the
+**Regimap** is a drug–drug interaction workspace for clinicians, built on **real data**: the
 DrugBank-derived Kaggle dataset (1,701 drugs, 191,135 interactions), fetched
 under your own Kaggle account at setup time and never redistributed. A
 Rust-native petgraph engine runs in-process with the axum API; the React

@@ -24,7 +24,7 @@ export function RegimenReport() {
       <header className="mb-4 border-b-2 border-black pb-2">
         <h1 className="text-lg font-bold">Medication interaction check</h1>
         <p>
-          Generated {new Date().toLocaleString()} · Drug Interaction Visualizer (demo) ·{' '}
+          Generated {new Date().toLocaleString()} · Regimap — Drug Interaction Visualizer (demo) ·{' '}
           <span className="break-all">{window.location.href}</span>
         </p>
       </header>

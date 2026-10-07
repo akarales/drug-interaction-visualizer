@@ -82,10 +82,10 @@ const video = await page.video().path();
 await context.close();
 await browser.close();
 
-// webm → GIF (< 3 MB): played 1.6× (≈ 15–18 s), 8 fps; denoise the lossy
-// webm and drop near-duplicate frames (kept as longer delays), 800 px, 64 colours
+// webm → GIF (< 3 MB): played 1.6× (≈ 15–20 s), 8 fps; denoise the lossy
+// webm and drop near-duplicate frames (kept as longer delays), 780 px, 64 colours
 const filters =
-  'setpts=PTS/1.6,fps=8,hqdn3d=3:3:8:8,mpdecimate=hi=64*24:lo=64*8:frac=0.2,scale=800:-1:flags=lanczos,' +
+  'setpts=PTS/1.6,fps=8,hqdn3d=3:3:8:8,mpdecimate=hi=64*24:lo=64*8:frac=0.2,scale=780:-1:flags=lanczos,' +
   'split[a][b];[a]palettegen=max_colors=64:stats_mode=diff[p];[b][p]paletteuse=dither=none:diff_mode=rectangle';
 execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-ss', String(Math.max(0, lead)), '-i', video, '-vf', filters, '-fps_mode', 'vfr', '-loop', '0', OUT]);
 copyFileSync(video, join(tmpdir(), 'ddi-demo-raw.webm')); // for re-encoding without re-recording

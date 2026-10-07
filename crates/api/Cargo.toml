@@ -1,6 +1,6 @@
 [package]
 name = "drug-interaction-api"
-description = "Drug Interaction Visualizer API (axum)"
+description = "Regimap (Drug Interaction Visualizer) API (axum)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

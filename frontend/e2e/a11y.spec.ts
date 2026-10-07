@@ -6,6 +6,11 @@ import { expect, test, type Page } from '@playwright/test';
  * report no serious or critical violations, and reduced motion must stop
  * the active-card animation.
  */
+// axe over the full DOM on a SwiftShader-rendered WebGL page is slow on
+// shared CI runners (one run took 1.3 min for a 47 s test, then timed out
+// tearing down the context) — triple the timeout for this file
+test.slow();
+
 async function seriousViolations(page: Page): Promise<string[]> {
   const results = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa']).exclude('canvas').analyze();
   return results.violations

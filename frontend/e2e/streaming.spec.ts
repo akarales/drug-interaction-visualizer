@@ -6,8 +6,9 @@ test('explanation streams in, then the validated payload enables copy/print', as
   const inspector = page.getByRole('complementary', { name: 'Inspector' });
   await inspector.getByRole('button', { name: 'Explain for clinician + patient' }).click();
 
-  // while streaming: Stop is offered and text is already visible
-  await expect(inspector.getByRole('button', { name: 'Stop' })).toBeVisible();
+  // streamed text arrives (the mid-stream state itself is covered by the
+  // Rust stream tests and the NDJSON reader unit tests: the stub finishes in
+  // about a second, too fast to assert reliably on a slow CI runner)
   await expect(inspector.getByText(/Offline stub \(clinician section\)/)).toBeVisible();
 
   // final payload: Stop gone, handout actions available, disclaimer shown
@@ -17,6 +18,8 @@ test('explanation streams in, then the validated payload enables copy/print', as
 });
 
 test('Stop cancels a running explanation', async ({ page }) => {
+  // hold the stream open (never respond) so Stop is deterministically available
+  await page.route('**/api/v1/explain/stream', () => {});
   await page.goto('/?meds=warfarin,aspirin');
   const inspector = page.getByRole('complementary', { name: 'Inspector' });
   await inspector.getByRole('button', { name: 'Explain for clinician + patient' }).click();
